@@ -15,9 +15,11 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from PIL import Image
+from textwrap import wrap
 import numpy as np
 import matplotlib.pyplot as plt
 import pathlib
+import math
 
 # Declare the settings with which to uniformly "normalize" images before training
 image_settings = transforms.Compose([
@@ -36,12 +38,14 @@ training_loader = torch.utils.data.DataLoader(training_set, batch_size=32, shuff
 validation_loader = torch.utils.data.DataLoader(validation_set, batch_size =32, shuffle=True)
 
 # Create a densenet model from torchvision.models library
-# Allow the user to choose the control or variable mode
-train_choice = input("Would you like to run in pretrained mode? (yes or no)\n")
-if train_choice == "no":
-    model = models.densenet161(pretrained=False)
-elif train_choice == "yes":
-    model = models.densenet161(pretrained=True)
+# Allow the user to choose the control or variable mode (for experimental purposes)
+# train_choice = input("Would you like to run in pretrained mode? (yes or no)\n")
+# if train_choice == "no":
+#    model = models.densenet161(pretrained=False)
+# elif train_choice == "yes":
+#    model = models.densenet161(pretrained=True)
+
+model = models.densenet161(pretrained=True)
 
 # Remove classification layer of the imported model
 for param in model.parameters():
@@ -228,12 +232,17 @@ def convert_guess(class_guess):
     elif class_guess == 3:
         class_name = "blueberry muffins"
     return class_name
-    
+
+# method to round output
+def truncate(number, digits) -> float:
+    stepper = 10.0 ** digits
+    return math.trunc(stepper * number) / stepper
+
 
 # Ensure model is switched to evaluation before prediction
 model.eval()
 
-mode = input("Would you like to run....\n 1: interactive mode?\n 2: automatic mode?\n")
+mode = input("Would you like to run....\n 1: interactive mode?\n 2: automatic mode?\n 3: figure mode?\n")
 mode = int(mode)
 
 # interactive mode
@@ -248,7 +257,7 @@ if mode == 1:
         show_image(image)
         print("The model is ", probability*100, "% certain that the image is of the class", convert_guess(class_guess)) 
 
-# automatic mode
+# automatic/batch mode
 elif mode == 2:
     out = open("results.txt", "w") 
     folder = input("Please enter the name of the folder you would like to test (of the form ./folderName): ")
@@ -266,5 +275,37 @@ elif mode == 2:
             print(statement)
             out.write(statement + '\n')
 
+# figure mode
+elif mode == 3:
+    print("Model is evaluating test images and will produce a graphed result...")
+    filepath = pathlib.Path("./data")
 
+    # define figure
+    fig, axs = plt.subplots(nrows=3, ncols=5, figsize=(10, 10),
+                            subplot_kw={'xticks': [], 'yticks': []})
+    plt.rcParams["axes.titlesize"] = 8
+
+    results = []
+    confidences = []
+    evaluated_images = []
+    for item in filepath.iterdir():
+        if item.is_file():
+            image = process_image(item)
+            probability, class_guess = predict(image, model)
+            results.append(convert_guess(class_guess))
+            confidences.append(probability*100)
+            evaluated_images.append(image)
+
+    for ax, result, confidence, image in zip(axs.flat, results, confidences, evaluated_images):
+        ax.set_title("\n".join(wrap("Prediction: " + str(result) + " (" + str(truncate(confidence, 2)) + "% confidence)", 25)))
+
+        image = image.numpy()
+        # Denormalize to plot
+        image[0] = image[0] * 0.226 + 0.445
+    
+        ax.imshow(np.transpose(image[0], (1, 2, 0)))
+
+    fig.subplots_adjust(top=0.8)
+    plt.savefig('results.jpg')
+    plt.show()
         
